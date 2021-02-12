@@ -1,5 +1,8 @@
 from fbprophet import Prophet
-from utilities import _ensure_is_list
+import pandas as pd
+import numpy as np
+import pytest
+from anomaly_detection.utilities import _ensure_is_list
 
 
 class AnomalyDetector:
@@ -24,48 +27,55 @@ class AnomalyDetector:
         below for examples of what you might want to include
     """
 
+    from anomaly_detection.io import save, load
+
     def __init__(
         self, data, target=None, datetime_column=None, additional_regressors=None,
     ):
 
-        self.target = _assert_target(target)
-        self.datetime_column = _assert_datetime(datetime_column)
+        self.set_target(target, data)
+        self.set_datetime(datetime_column, data)
         self.additional_regressors = _ensure_is_list(additional_regressors)
 
-        self.data = _format_dataframe(data)
+        self.set_data(data, additional_regressors)
 
         self.model = None
 
-        def _assert_target(self, target, data):
-            if not target:
-                assert isinstance(
-                    data, pd.Series
-                ), "Please pass your dependent variable name to target when not using a Series"
-                self.target = data.name
-            else:
-                self.target = target
+    def set_target(self, target, data):
+        if not target:
+            assert (
+                "y" in data.columns
+            ), "Please pass your dependent variable name to the target argument."
+            self.target = "y"
+        else:
+            self.target = target
 
-        def _assert_datetime(self, datetime_column, data):
-            if not datetime_column:
-                assert isinstance(
-                    data.index, pd.DatetimeIndex
-                ), "Please pass datetime_column if not using a Dataframe or Series with a time-series index"
-                self.datetime_column = data.index.name
+    def set_datetime(self, datetime_column, data):
+        if not datetime_column:
+            if isinstance(data.index, pd.DatetimeIndex):
+                index_name = data.index.name
                 data.reset_index(inplace=True)
-            else:
-                self.datetime_column = datetime_column
+                data.rename({index_name: "ds"}, inplace=True, axis=1)
 
-        def _format_dataframe(self, data):
-            columns = [self.target, self.datetime_column]
+            assert (
+                "ds" in data.columns
+            ), "Please pass datetime_column if not including a 'ds' column"
 
-            if additional_regressors:
-                columns.append(additional_regressors, inplace=True)
+            self.datetime_column = "ds"
+        else:
+            self.datetime_column = datetime_column
 
-            self.data = data.loc[:, columns].rename(
-                {self.datetime_column: "ds", self.target: "y"}
-            )
+    def set_data(self, data, additional_regressors):
+        columns = [self.target, self.datetime_column]
 
-    def fit_predict_model(self, interval_width=0.95, *args, **kwargs):
+        if additional_regressors:
+            columns.append(additional_regressors, inplace=True)
+
+        self.data = data.loc[:, columns].rename(
+            {self.datetime_column: "ds", self.target: "y"}, axis=1
+        )
+
+    def fit(self, interval_width=0.95, *args, **kwargs):
         """
         Parameters (passed as *args or **kwargs to Prophet)
         ----------
@@ -112,7 +122,9 @@ class AnomalyDetector:
             optionally can have a column prior_scale specifying the prior scale for
             that holiday.
         seasonality_mode: str, default "additive"
-            'additive' (default) or 'multiplicative'.
+            'additive' (default) or 'multiplicative'. Multiplicative seasonality implies
+            that each season applies a scaling effect to the overall trend, while additive 
+            seasonality implies adding seasonality to trend to arrive at delta.
         seasonality_prior_scale: float, default 10.0
             Parameter modulating the strength of the
             seasonality model. Larger values allow the model to fit larger seasonal
@@ -128,7 +140,8 @@ class AnomalyDetector:
         mcmc_samples: int, default 0
             Integer, if greater than 0, will do full Bayesian inference
             with the specified number of MCMC samples. If 0, will do MAP
-            estimation.
+            estimation, which only measures uncertainty in the trend and 
+            observation noise but is much faster to run.
         uncertainty_samples: int, default 1000
             Number of simulated draws used to estimate
             uncertainty intervals. Settings this value to 0 or False will disable
@@ -143,12 +156,50 @@ class AnomalyDetector:
             (model.add_regressor(regressor) for regressor in self.additional_regressors)
 
         model = model.fit(self.data)
-        forecast = model.predict(self.data)
-        # forecast["fact"] = dataframe["y"].reset_index(drop=True)
-        return forecast
 
+        self.model = model
 
-# pred = fit_predict_model(df1)
+    def predict(self, predict_data=None, *args, **kwargs):
+        if not self.model:
+            self.fit(*args, **kwargs)
+
+        if not predict_data:
+            predict_data = self.data
+
+        self.forecasts = self.model.predict(predict_data)
+
+    def detect_anomalies(self):
+        def _calc_percent_deviation(boundary, value):
+            return ((value - boundary) / boundary).astype(np.float32)
+
+        if not self.forecasts:
+            self.predict()
+
+        forecasts = self.forecasts[["ds", "trend", "yhat", "yhat_lower", "yhat_upper"]]
+        forecasts["actuals"] = self.data[self.target]
+
+        large_anoms = forecasts["actuals"] > forecasts["yhat_upper"]
+        small_anoms = forecasts["actuals"] < forecasts["yhat_lower"]
+
+        forecasts.loc[large_anoms, "anomaly_score"] = _calc_percent_deviation(
+            forecasts.loc[large_anoms, "yhat_upper"],
+            forecasts.loc[large_anoms, "actuals"],
+        )
+
+        forecasts.loc[small_anoms, "anomaly_score"] = _calc_percent_deviation(
+            forecasts.loc[small_anoms, "yhat_lower"],
+            forecasts.loc[small_anoms, "actuals"],
+        )
+
+        return forecasts
+
+    @pytest.mark.skip(reason="plotting function")
+    def plot_forecasts(self):
+        return self.model.plot(self.forecasts)
+
+    @pytest.mark.skip(reason="plotting function")
+    def plot_components(self):
+        return self.model.plot_components(self.forecasts)
 
 
 # def detect_anomalies(forecast):

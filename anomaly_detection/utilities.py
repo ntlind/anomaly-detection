@@ -1,6 +1,7 @@
 import pandas as pd
 import numpy as np
 import pytest
+import anomaly_detection as ad
 
 
 @pytest.mark.skip(reason="simple python functionality")
@@ -63,3 +64,12 @@ def _get_test_example(convert_dtypes=True):
         example["datetime"] = pd.to_datetime(example["datetime"])
 
     return example
+
+
+@pytest.mark.skip(reason="wrapper")
+def _get_detector_example():
+    """
+    Return an AnomalyDetector object for testing
+    """
+    data = _get_prophet_example()
+    return ad.AnomalyDetector(data=data)
