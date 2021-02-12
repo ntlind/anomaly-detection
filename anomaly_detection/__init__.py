@@ -28,8 +28,8 @@ class AnomalyDetector:
         self, data, target=None, datetime_column=None, additional_regressors=None,
     ):
 
-        self.target = assert_target(target)
-        self.datetime_column = assert_datetime(datetime_column)
+        self.target = _assert_target(target)
+        self.datetime_column = _assert_datetime(datetime_column)
         self.additional_regressors = _ensure_is_list(additional_regressors)
 
         self.data = _format_dataframe(data)
