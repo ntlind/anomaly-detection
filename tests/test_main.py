@@ -71,7 +71,7 @@ def test_detect_anomalies():
     assert (null_count / total_rows) >= 0.92
 
 
-def test_append_results():
+def test_get_results():
     example = ad.utilities._get_test_example()
     prophet_example = ad.utilities._get_prophet_example()
 
@@ -88,10 +88,10 @@ def test_append_results():
         output_changepoints = set(
             final_output.loc[
                 final_output["changepoint_flag"] == 1, detect.datetime_column
-            ])
-        model_changepoints = 
-        assert 
-        ) == 
+            ]
+        )
+        model_changepoints = set(detect.model.changepoints)
+        assert output_changepoints == model_changepoints
 
         # check that column / date order hasn't changed
         assert (final_output[detect.target] == data[detect.target]).all()
@@ -132,8 +132,9 @@ if __name__ == "__main__":
     test_fit()
     test_predict()
     test_detect_anomalies()
-    test_append_results()
+    test_get_results()
     test_plot_forecasts()
     test_plot_components()
     test_plot_anomalies()
+    print("Passed!")
 

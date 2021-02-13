@@ -157,7 +157,7 @@ def detect_anomalies(self, *args, **kwargs):
     self.results = results
 
 
-def append_results(self, *args, **kwargs):
+def get_results(self, *args, **kwargs):
     """
     Return your original dataframe with added anomaly_score and changepoint_flag columns
     """
@@ -226,8 +226,9 @@ def plot_anomalies(self, width=870, height=450):
         .interactive()
     )
 
+    anomaly_mask = results.anomaly_score != 0
     actuals = (
-        alt.Chart(results[results.anomaly_score.isna()])
+        alt.Chart(results[~anomaly_mask])
         .transform_calculate(name='"Actuals"')
         .mark_circle(size=15, opacity=0.7, color="Black")
         .encode(
@@ -240,9 +241,8 @@ def plot_anomalies(self, width=870, height=450):
     )
 
     results["abs_anomaly_score"] = abs(results["anomaly_score"])
-
     anomalies = (
-        alt.Chart(results[~results.anomaly_score != 0])
+        alt.Chart(results[anomaly_mask])
         .transform_calculate(name='"Outliers"')
         .mark_circle(size=30, color="Red")
         .encode(

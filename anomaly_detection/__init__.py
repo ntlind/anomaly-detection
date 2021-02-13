@@ -32,7 +32,7 @@ class AnomalyDetector:
         fit,
         predict,
         detect_anomalies,
-        append_results,
+        get_results,
         plot_forecasts,
         plot_components,
         plot_anomalies,
