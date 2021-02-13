@@ -53,27 +53,51 @@ def test_predict():
     detector = ad.utilities._get_detector_example()
     detector.predict()
 
-    forecasts = self.forecasts
+    forecasts = detector.forecasts
 
     assert (forecasts["yhat"] >= 100000).all() & (forecasts["yhat"] <= 518253).all()
 
 
 def test_detect_anomalies():
     detector = ad.utilities._get_detector_example()
-    forecasts = detector.detect_anomalies()
+    results = detector.detect_anomalies()
 
-    total_rows = len(forecasts)
+    total_rows = len(results)
 
-    null_count = sum(forecasts["anomaly_score"].isnull())
+    null_count = sum(results["anomaly_score"].isnull())
 
-    assert (null_count / total_rows) >= 0.95
-    print(forecasts["anomaly_score"].describe())
+    # As a rough guideline, there shouldn't be that many anomalies
+    assert (null_count / total_rows) >= 0.92
+
+
+def test_plot_forecasts():
+    detector = ad.utilities._get_detector_example()
+    results = detector.detect_anomalies()
+
+    print(detector.plot_forecasts())
+
+
+def test_plot_components():
+    detector = ad.utilities._get_detector_example()
+    results = detector.detect_anomalies()
+
+    print(detector.plot_components())
+
+
+def test_plot_anomalies():
+    detector = ad.utilities._get_detector_example()
+    results = detector.detect_anomalies()
+
+    print(detector.plot_anomalies())
 
 
 if __name__ == "__main__":
-    # test_pystan()
+    test_pystan()
     test__format_dataframe()
     test_fit()
     test_predict()
     test_detect_anomalies()
+    test_plot_forecasts()
+    test_plot_components()
+    test_plot_anomalies()
 
