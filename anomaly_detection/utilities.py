@@ -1,3 +1,7 @@
+"""
+Testing and utility functions for anomaly-detector
+"""
+
 import pandas as pd
 import numpy as np
 import pytest
@@ -21,6 +25,9 @@ def _ensure_is_list(obj):
 
 @pytest.mark.skip(reason="simple pandas command")
 def _get_prophet_example():
+    """
+    Download the retail example from Prophet's GitHub
+    """
     return pd.read_csv(
         "https://raw.githubusercontent.com/facebookincubator/prophet/master/examples/example_retail_sales.csv"
     )
@@ -67,9 +74,15 @@ def _get_test_example(convert_dtypes=True):
 
 
 @pytest.mark.skip(reason="wrapper")
-def _get_detector_example():
+def _get_detector_example(type_="prophet"):
     """
     Return an AnomalyDetector object for testing
     """
-    data = _get_prophet_example()
-    return ad.AnomalyDetector(data=data)
+    if type_ == "prophet":
+        data = _get_prophet_example()
+        return ad.AnomalyDetector(data=data, target="y", datetime_column="ds")
+    else:
+        data = _get_test_example()
+        return ad.AnomalyDetector(
+            data=data, target="sales_float", datetime_column="datetime"
+        )

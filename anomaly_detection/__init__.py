@@ -32,6 +32,7 @@ class AnomalyDetector:
         fit,
         predict,
         detect_anomalies,
+        append_results,
         plot_forecasts,
         plot_components,
         plot_anomalies,
@@ -75,32 +76,16 @@ class AnomalyDetector:
             self.datetime_column = datetime_column
 
     def set_data(self, data, additional_regressors):
+        self.input_data = data
+
         columns = [self.target, self.datetime_column]
 
         if additional_regressors:
             columns += additional_regressors
 
-        self.data = data.loc[:, columns].rename(
+        data_copy = data.copy(deep=True)
+
+        self.data = data_copy.loc[:, columns].rename(
             {self.datetime_column: "ds", self.target: "y"}, axis=1
         )
-
-
-# def detect_anomalies(forecast):
-#     forecasted = forecast[['ds','trend', 'yhat', 'yhat_lower', 'yhat_upper', 'fact']].copy()
-#     #forecast['fact'] = df['y']
-
-#     forecasted['anomaly'] = 0
-#     forecasted.loc[forecasted['fact'] > forecasted['yhat_upper'], 'anomaly'] = 1
-#     forecasted.loc[forecasted['fact'] < forecasted['yhat_lower'], 'anomaly'] = -1
-
-#     #anomaly importances
-#     forecasted['importance'] = 0
-#     forecasted.loc[forecasted['anomaly'] ==1, 'importance'] = \
-#         (forecasted['fact'] - forecasted['yhat_upper'])/forecast['fact']
-#     forecasted.loc[forecasted['anomaly'] ==-1, 'importance'] = \
-#         (forecasted['yhat_lower'] - forecasted['fact'])/forecast['fact']
-
-#     return forecasted
-
-# pred = detect_anomalies(pred)
 

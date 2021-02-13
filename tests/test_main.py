@@ -16,11 +16,11 @@ def test_pystan():
 
 
 def test__format_dataframe():
-    simple_example = ad.utilities._get_prophet_example()
+    prophet_example = ad.utilities._get_prophet_example()
     example = ad.utilities._get_test_example()
 
     # should pass
-    detector = ad.AnomalyDetector(data=simple_example)
+    detector = ad.AnomalyDetector(data=prophet_example)
     detector = ad.AnomalyDetector(
         data=example, datetime_column="datetime", target="sales_float"
     )
@@ -39,6 +39,7 @@ def test__format_dataframe():
     except AssertionError:
         pass
 
+    assert set(("sales_float", "datetime")).issubset(set(example))
     assert set(("y", "ds")).issubset(set(detector.data.columns))
 
 
@@ -53,21 +54,55 @@ def test_predict():
     detector = ad.utilities._get_detector_example()
     detector.predict()
 
-    forecasts = detector.forecasts
+    forecasts = detector.results
 
     assert (forecasts["yhat"] >= 100000).all() & (forecasts["yhat"] <= 518253).all()
 
 
 def test_detect_anomalies():
     detector = ad.utilities._get_detector_example()
-    results = detector.detect_anomalies()
+    detector.detect_anomalies()
 
-    total_rows = len(results)
+    total_rows = len(detector.results)
 
-    null_count = sum(results["anomaly_score"].isnull())
+    null_count = sum(detector.results["anomaly_score"] == 0)
 
     # As a rough guideline, there shouldn't be that many anomalies
     assert (null_count / total_rows) >= 0.92
+
+
+def test_append_results():
+    example = ad.utilities._get_test_example()
+    prophet_example = ad.utilities._get_prophet_example()
+
+    detector = ad.utilities._get_detector_example(type_="test")
+    prophet_detector = ad.utilities._get_detector_example(type_="prophet")
+
+    for data, detect in [(example, detector), (prophet_example, prophet_detector)]:
+
+        detect.detect_anomalies()
+
+        final_output = detect.append_results()
+
+        # check that changepoints are assigned correctly
+        output_changepoints = set(
+            final_output.loc[
+                final_output["changepoint_flag"] == 1, detect.datetime_column
+            ])
+        model_changepoints = 
+        assert 
+        ) == 
+
+        # check that column / date order hasn't changed
+        assert (final_output[detect.target] == data[detect.target]).all()
+        assert (
+            final_output[detect.datetime_column] == data[detect.datetime_column]
+        ).all()
+
+        # check that correct columns are included
+        assert set(("anomaly_score", "changepoint_flag")).issubset(
+            set(final_output.columns)
+        )
 
 
 def test_plot_forecasts():
@@ -97,6 +132,7 @@ if __name__ == "__main__":
     test_fit()
     test_predict()
     test_detect_anomalies()
+    test_append_results()
     test_plot_forecasts()
     test_plot_components()
     test_plot_anomalies()

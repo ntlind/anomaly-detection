@@ -1,3 +1,7 @@
+"""
+All core methods for anomaly-detector, including plotting functions
+"""
+
 from fbprophet import Prophet
 import pandas as pd
 import numpy as np
@@ -5,8 +9,10 @@ import pytest
 import altair as alt
 
 
-def fit(self, interval_width=0.95, *args, **kwargs):
+def fit(self, interval_width=0.95, changepoint_range=1, *args, **kwargs):
     """
+    Fit Prophet to the data.
+
     Parameters (passed as *args or **kwargs to Prophet)
     ----------
     interval_width: float, default .95
@@ -80,7 +86,12 @@ def fit(self, interval_width=0.95, *args, **kwargs):
         str as defined in StanBackendEnum default: None - will try to
         iterate over all available backends and find the working one
     """
-    model = Prophet(interval_width=interval_width, *args, **kwargs)
+    model = Prophet(
+        interval_width=interval_width,
+        changepoint_range=changepoint_range,
+        *args,
+        **kwargs
+    )
 
     if self.additional_regressors:
         (model.add_regressor(regressor) for regressor in self.additional_regressors)
@@ -91,6 +102,17 @@ def fit(self, interval_width=0.95, *args, **kwargs):
 
 
 def predict(self, predict_data=None, *args, **kwargs):
+    """
+    Predict expected values for the time-series using Prophet. If no model has been fitted, this
+    function will automatically call self.fit(). *args and **kwargs are passed to Prophet's .fit()
+    method.
+
+    Parameters (passed as *args or **kwargs to Prophet)
+    ----------
+    predict_data : pd.Dataframe, default None
+        An optional parameter in case you'd like Prophet to make out-of-sample predictions. Defaults to 
+        in-sample predictions.
+    """
     if not self.model:
         self.fit(*args, **kwargs)
 
@@ -100,12 +122,19 @@ def predict(self, predict_data=None, *args, **kwargs):
     self.results = self.model.predict(predict_data)
 
 
-def detect_anomalies(self):
+def detect_anomalies(self, *args, **kwargs):
+    """
+    Leverages Prophet's predictions to flag actuals greater than their upper confidence interval or 
+    lower than their lower confidence interval.  Also adds a "changepoint_flag" for dates where Prophet 
+    detected a changepoint. If no predictions exist to build these variables off of, this
+    function will automatically call self.predict(). 
+    """
+
     def _calc_percent_deviation(boundary, value):
         return ((value - boundary) / boundary).astype(np.float32)
 
     if not isinstance(self.results, pd.DataFrame):
-        self.predict()
+        self.predict(*args, **kwargs)
 
     results = self.results
     results["actuals"] = self.data["y"]
@@ -113,6 +142,7 @@ def detect_anomalies(self):
     large_anoms = results["actuals"] > results["yhat_upper"]
     small_anoms = results["actuals"] < results["yhat_lower"]
 
+    results["anomaly_score"] = 0
     results.loc[large_anoms, "anomaly_score"] = _calc_percent_deviation(
         results.loc[large_anoms, "yhat_upper"], results.loc[large_anoms, "actuals"],
     )
@@ -121,64 +151,127 @@ def detect_anomalies(self):
         results.loc[small_anoms, "yhat_lower"], results.loc[small_anoms, "actuals"],
     )
 
+    results["changepoint_flag"] = 0
+    results.loc[results["ds"].isin(self.model.changepoints), "changepoint_flag"] = 1
+
     self.results = results
+
+
+def append_results(self, *args, **kwargs):
+    """
+    Return your original dataframe with added anomaly_score and changepoint_flag columns
+    """
+
+    if not isinstance(self.results, pd.DataFrame):
+        self.predict(*args, **kwargs)
+
+    if "anomaly_score" not in self.results.columns:
+        self.detect_anomalies(*args, **kwargs)
+
+    return pd.concat(
+        [self.input_data, self.results[["anomaly_score", "changepoint_flag"]]], axis=1
+    )
 
 
 @pytest.mark.skip(reason="plotting function")
 def plot_forecasts(self):
+    """
+    Wrapper function for Prophet's default plotting functionality.
+    """
     return self.model.plot(self.results)
 
 
 @pytest.mark.skip(reason="plotting function")
 def plot_components(self):
+    """
+    Wrapper function for Prophet's default plotting functionality.
+    """
     return self.model.plot_components(self.results)
 
 
-def plot_anomalies(self, width=870, height=450, fontSize=20):
+@pytest.mark.skip(reason="plotting function")
+def plot_anomalies(self, width=870, height=450):
+    """
+    Plot your outliers, changepoints, actuals, and confidence intervals
+     on one convenient graph.
 
+    Parameters (passed as *args or **kwargs to Prophet)
+    ----------
+    width : int, default 870
+        Set the plot's width.
+    Height : int, default 450
+        Set the plot's height.
+    """
     alt.data_transformers.disable_max_rows()
 
     results = self.results
 
+    color_scheme = ["#000000", "#999999", "#00b0ff", "#ff4f00"]
+
     interval = (
         alt.Chart(results)
-        .mark_area(interpolate="basis", color="#00b0ff")
+        .transform_calculate(name='"Confidence Bounds"')
+        .mark_area(interpolate="basis")
         .encode(
             x=alt.X("ds:T", title="date"),
             y="yhat_upper",
             y2="yhat_lower",
             tooltip=["ds", "actuals", "yhat_lower", "yhat_upper"],
+            color=alt.Color(
+                "name:N",
+                scale=alt.Scale(range=color_scheme),
+                legend=alt.Legend(title=None),
+            ),
         )
         .interactive()
-        .properties(title="Anomaly Detection")
     )
 
     actuals = (
         alt.Chart(results[results.anomaly_score.isna()])
+        .transform_calculate(name='"Actuals"')
         .mark_circle(size=15, opacity=0.7, color="Black")
         .encode(
             x="ds:T",
             y=alt.Y("actuals", title=self.target),
             tooltip=["ds", "actuals", "yhat_lower", "yhat_upper"],
+            color=alt.Color("name:N", legend=alt.Legend(title=None),),
         )
         .interactive()
     )
 
+    results["abs_anomaly_score"] = abs(results["anomaly_score"])
+
     anomalies = (
-        alt.Chart(results[~results.anomaly_score.isna()])
+        alt.Chart(results[~results.anomaly_score != 0])
+        .transform_calculate(name='"Outliers"')
         .mark_circle(size=30, color="Red")
         .encode(
             x="ds:T",
             y=alt.Y("actuals", title=self.target),
-            tooltip=["ds", "actuals", "yhat_lower", "yhat_upper"],
-            size=alt.Size("anomaly_score", legend=None),
+            tooltip=["ds", "actuals", "yhat_lower", "yhat_upper", "anomaly_score"],
+            size=alt.Size("abs_anomaly_score", legend=None),
+            color=alt.Color("name:N", legend=alt.Legend(title=None),),
+        )
+        .interactive()
+    )
+
+    changepoints = results.loc[results["changepoint_flag"] == 1]
+
+    changepoints = (
+        alt.Chart(changepoints)
+        .transform_calculate(name='"Changepoint"')
+        .mark_rule(color="lightgray", size=0.7, strokeDash=[3, 5])
+        .encode(
+            x="ds:T",
+            tooltip=["ds"],
+            color=alt.Color("name:N", legend=alt.Legend(title=None),),
         )
         .interactive()
     )
 
     return (
-        alt.layer(interval, actuals, anomalies)
+        alt.layer(interval, actuals, anomalies, changepoints)
         .properties(width=width, height=height)
-        .configure_title(fontSize=fontSize)
+        .configure_axis(grid=False)
     )
 
