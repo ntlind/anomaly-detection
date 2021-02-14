@@ -140,4 +140,3 @@ if __name__ == "__main__":
     test_plot_components()
     test_plot_anomalies()
     print("Passed!")
-
