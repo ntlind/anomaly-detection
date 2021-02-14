@@ -80,9 +80,11 @@ def test_get_results():
 
     for data, detect in [(example, detector), (prophet_example, prophet_detector)]:
 
+        detect.predict()
+
         detect.detect_anomalies()
 
-        final_output = detect.append_results()
+        final_output = detect.get_results()
 
         # check that changepoints are assigned correctly
         output_changepoints = set(
@@ -91,13 +93,14 @@ def test_get_results():
             ]
         )
         model_changepoints = set(detect.model.changepoints)
+        print(detect.results)
+        print(final_output)
         assert output_changepoints == model_changepoints
 
         # check that column / date order hasn't changed
-        assert (final_output[detect.target] == data[detect.target]).all()
-        assert (
-            final_output[detect.datetime_column] == data[detect.datetime_column]
-        ).all()
+        final_output_set = set(final_output[[detect.target, detect.datetime_column]])
+        data_set = set(data[[detect.target, detect.datetime_column]])
+        assert final_output_set == data_set
 
         # check that correct columns are included
         assert set(("anomaly_score", "changepoint_flag")).issubset(

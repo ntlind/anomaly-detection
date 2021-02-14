@@ -76,7 +76,9 @@ class AnomalyDetector:
             self.datetime_column = datetime_column
 
     def set_data(self, data, additional_regressors):
-        self.input_data = data
+
+        # https://github.com/facebook/prophet/blob/3c69ce3312fcf91d15fd7e56812aa28cabf6f9f2/python/fbprophet/forecaster.py#L298
+        data = data.sort_values(self.datetime_column)
 
         columns = [self.target, self.datetime_column]
 

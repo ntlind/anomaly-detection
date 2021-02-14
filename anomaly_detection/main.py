@@ -101,25 +101,58 @@ def fit(self, interval_width=0.95, changepoint_range=1, *args, **kwargs):
     self.model = model
 
 
-def predict(self, predict_data=None, *args, **kwargs):
+def predict(self, df=None, *args, **kwargs):
     """
-    Predict expected values for the time-series using Prophet. If no model has been fitted, this
-    function will automatically call self.fit(). *args and **kwargs are passed to Prophet's .fit()
-    method.
-
-    Parameters (passed as *args or **kwargs to Prophet)
+    Predict using the prophet model.
+    
+    Parameters
     ----------
-    predict_data : pd.Dataframe, default None
-        An optional parameter in case you'd like Prophet to make out-of-sample predictions. Defaults to 
-        in-sample predictions.
+    df: pd.DataFrame with dates for predictions (column ds), and capacity
+        (column cap) if logistic growth. If not provided, predictions are
+        made on the history.
     """
     if not self.model:
         self.fit(*args, **kwargs)
 
-    if not predict_data:
-        predict_data = self.data
+    if df is None:
+        df = self.model.history.copy()
+    else:
+        if df.shape[0] == 0:
+            raise ValueError("Dataframe has no rows.")
+        df = self.model.setup_dataframe(df.copy())
 
-    self.results = self.model.predict(predict_data)
+    df["trend"] = self.model.predict_trend(df)
+    seasonal_components = self.model.predict_seasonal_components(df)
+    if self.model.uncertainty_samples:
+        intervals = self.model.predict_uncertainty(df)
+    else:
+        intervals = None
+
+    df2 = pd.concat((df, intervals, seasonal_components), axis=1)
+    df2["yhat"] = (
+        df2["trend"] * (1 + df2["multiplicative_terms"]) + df2["additive_terms"]
+    )
+
+    columns_to_keep = list(self.model.history.columns)
+    for col in ["y_scaled", "t"]:
+        columns_to_keep.remove(col)
+
+    for col in [
+        "trend",
+        "trend_lower",
+        "trend_upper",
+        "yhat_upper",
+        "yhat_lower",
+        "yhat",
+    ]:
+        columns_to_keep.append(col)
+
+    if "cap" in df:
+        columns_to_keep.append("cap")
+    if self.model.logistic_floor:
+        columns_to_keep.append("floor")
+
+    self.results = df2[columns_to_keep]
 
 
 def detect_anomalies(self, *args, **kwargs):
@@ -137,18 +170,17 @@ def detect_anomalies(self, *args, **kwargs):
         self.predict(*args, **kwargs)
 
     results = self.results
-    results["actuals"] = self.data["y"]
 
-    large_anoms = results["actuals"] > results["yhat_upper"]
-    small_anoms = results["actuals"] < results["yhat_lower"]
+    large_anoms = results["y"] > results["yhat_upper"]
+    small_anoms = results["y"] < results["yhat_lower"]
 
     results["anomaly_score"] = 0
     results.loc[large_anoms, "anomaly_score"] = _calc_percent_deviation(
-        results.loc[large_anoms, "yhat_upper"], results.loc[large_anoms, "actuals"],
+        results.loc[large_anoms, "yhat_upper"], results.loc[large_anoms, "y"],
     )
 
     results.loc[small_anoms, "anomaly_score"] = _calc_percent_deviation(
-        results.loc[small_anoms, "yhat_lower"], results.loc[small_anoms, "actuals"],
+        results.loc[small_anoms, "yhat_lower"], results.loc[small_anoms, "y"],
     )
 
     results["changepoint_flag"] = 0
@@ -168,8 +200,12 @@ def get_results(self, *args, **kwargs):
     if "anomaly_score" not in self.results.columns:
         self.detect_anomalies(*args, **kwargs)
 
-    return pd.concat(
-        [self.input_data, self.results[["anomaly_score", "changepoint_flag"]]], axis=1
+    results = self.results.rename(
+        {"ds": self.datetime_column, "y": self.target}, axis=1
+    )
+
+    return results.drop(
+        ["floor", "trend", "yhat_upper", "yhat_lower", "yhat"], axis=1, errors="ignore"
     )
 
 
@@ -216,7 +252,7 @@ def plot_anomalies(self, width=870, height=450):
             x=alt.X("ds:T", title="date"),
             y="yhat_upper",
             y2="yhat_lower",
-            tooltip=["ds", "actuals", "yhat_lower", "yhat_upper"],
+            tooltip=["ds", "y", "yhat_lower", "yhat_upper"],
             color=alt.Color(
                 "name:N",
                 scale=alt.Scale(range=color_scheme),
@@ -233,8 +269,8 @@ def plot_anomalies(self, width=870, height=450):
         .mark_circle(size=15, opacity=0.7, color="Black")
         .encode(
             x="ds:T",
-            y=alt.Y("actuals", title=self.target),
-            tooltip=["ds", "actuals", "yhat_lower", "yhat_upper"],
+            y=alt.Y("y", title=self.target),
+            tooltip=["ds", "y", "yhat_lower", "yhat_upper"],
             color=alt.Color("name:N", legend=alt.Legend(title=None),),
         )
         .interactive()
@@ -247,8 +283,8 @@ def plot_anomalies(self, width=870, height=450):
         .mark_circle(size=30, color="Red")
         .encode(
             x="ds:T",
-            y=alt.Y("actuals", title=self.target),
-            tooltip=["ds", "actuals", "yhat_lower", "yhat_upper", "anomaly_score"],
+            y=alt.Y("y", title=self.target),
+            tooltip=["ds", "y", "yhat_lower", "yhat_upper", "anomaly_score"],
             size=alt.Size("abs_anomaly_score", legend=None),
             color=alt.Color("name:N", legend=alt.Legend(title=None),),
         )

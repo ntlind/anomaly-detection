@@ -84,5 +84,8 @@ def _get_detector_example(type_="prophet"):
     else:
         data = _get_test_example()
         return ad.AnomalyDetector(
-            data=data, target="sales_float", datetime_column="datetime"
+            data=data,
+            target="sales_float",
+            datetime_column="datetime",
+            additional_regressors=["category", "product", "state", "store"],
         )
