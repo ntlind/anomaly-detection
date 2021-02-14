@@ -1,3 +1,4 @@
 ignore:
   - "anomaly_detection/io"
   - "anomaly_detection/utilities"
+  - "setup.py"
